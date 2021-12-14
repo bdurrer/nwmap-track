@@ -1,22 +1,89 @@
 import React, { Component} from "react";
 
-import {Icon, Style, Text, Fill, Stroke} from 'ol/style';
+import {Style, Fill, Stroke, Circle as CircleStyle} from 'ol/style';
 import LineString from 'ol/geom/LineString';
 import 'ol/ol.css';
 import Map from 'ol/Map';
-import Projection from 'ol/proj/Projection';
 import Feature from 'ol/Feature';
 import VectorSource from 'ol/source/Vector';
 import Point from 'ol/geom/Point';
-import { buffer, containsCoordinate} from 'ol/extent';
+import {containsCoordinate} from 'ol/extent';
 import View from 'ol/View';
-import {Image as ImageLayer, Tile as TileLayer, Vector as VectorLayer} from 'ol/layer';
-import {linear} from 'ol/easing'
+import {Tile as TileLayer, Vector as VectorLayer} from 'ol/layer';
 import XYZ from 'ol/source/XYZ';
+
+import Markers from '../data/coords.json';
 
 import "./app.css";
 
 import { isInRange, toMapCoords, toGameCoords, loadPath, savePath } from '../utils';
+
+const styles = {
+    crystal: new Style({
+        image: new CircleStyle({
+            radius: 7,
+            fill: new Fill({color: '#ded8d8'}),
+            stroke: new Stroke({color: '#3f3f3f', width: 1}),
+        }),
+    }),
+    gold: new Style({
+        image: new CircleStyle({
+            radius: 7,
+            fill: new Fill({color: '#c2a965'}),
+            stroke: new Stroke({color: '#ffffff', width: 1}),
+        }),
+    }),
+    silver: new Style({
+        image: new CircleStyle({
+            radius: 7,
+            fill: new Fill({color: '#b7b7b7'}),
+            stroke: new Stroke({color: '#ffffff', width: 1}),
+        }),
+    }),
+    iron: new Style({
+        image: new CircleStyle({
+            radius: 7,
+            fill: new Fill({color: '#8a8a8a'}),
+            stroke: new Stroke({color: '#383838', width: 1}),
+        }),
+    }),
+    lodestone: new Style({
+        image: new CircleStyle({
+            radius: 7,
+            fill: new Fill({color: '#bd51c5'}),
+            stroke: new Stroke({color: '#ffffff', width: 1}),
+        }),
+    }),
+    orichalcum: new Style({
+        image: new CircleStyle({
+            radius: 7,
+            fill: new Fill({color: '#ff5422'}),
+            stroke: new Stroke({color: '#ffffff', width: 1}),
+        }),
+    }),
+    starmetal: new Style({
+        image: new CircleStyle({
+            radius: 7,
+            fill: new Fill({color: '#429de8'}),
+            stroke: new Stroke({color: '#ffffff', width: 1}),
+        }),
+    }),
+    default: new Style({
+        image: new CircleStyle({
+            radius: 7,
+            fill: new Fill({color: '#211f1f'}),
+            stroke: new Stroke({color: '#ffffff', width: 1}),
+        }),
+    }),
+    saltpeter: new Style({
+        image: new CircleStyle({
+            radius: 7,
+            fill: new Fill({color: '#211f1f'}),
+            stroke: new Stroke({color: '#ffffff', width: 1}),
+        }),
+    }),
+
+}
 
 class App extends Component {
     constructor(props) {
@@ -28,6 +95,7 @@ class App extends Component {
             trackedPlayer: 'Enlokah',
             waypoints: 0,
             pathColor: [10, 130, 10, 0.8],
+            maxMarkers: 4000,
         }
     }
 
@@ -41,6 +109,7 @@ class App extends Component {
 
         this.initMap();
         this.updateMapDraw();
+        this.updateMarkers();
         this.initSocket();
         this.startAutoSave();
     }
@@ -56,6 +125,17 @@ class App extends Component {
     }
 
     initMap() {
+        this.vectorPathSource = new VectorSource({
+            features: [],
+        });
+
+        this.vectorPathLayer = new VectorLayer({
+            source: this.vectorPathSource,
+            renderMode: "vector",
+            updateWhileAnimating: true,
+            updateWhileInteracting: true,
+        });
+
         this.vectorSource = new VectorSource({
             features: [],
         });
@@ -76,6 +156,7 @@ class App extends Component {
                 }),
             }),
             this.vectorLayer,
+            this.vectorPathLayer,
         ];
 
         let startPosition = [9356.67, 2693.11];
@@ -95,6 +176,8 @@ class App extends Component {
             layers: layers,
             view: this.view,
         });
+
+        this.map.on('moveend', this.maybeUpdateMarkers);
     }
 
     initSocket() {
@@ -165,11 +248,13 @@ class App extends Component {
             waypoints: this.path.length,
         });
         this.updateMapDraw();
+        this.updateMarkers();
     }
 
     updateMapDraw = () => {
         //clear current features
-        this.vectorSource.clear(true);
+        this.vectorPathSource.clear(true);
+        const features_to_add = [];
         // add all features in one go
 
         const pathFeature = new Feature({
@@ -182,7 +267,55 @@ class App extends Component {
                 color: this.state.pathColor,
             })
         }));
-        this.vectorSource.addFeature(pathFeature);
+
+        features_to_add.push(pathFeature);
+        this.vectorPathSource.addFeatures(features_to_add);
+    }
+
+    updateMarkers = () => {
+        this.vectorSource.clear(true);
+
+        const features = this.buildMarkerFeatures();
+        this.vectorSource.addFeatures(features);
+    }
+
+    maybeUpdateMarkers = () => {
+        console.log('maybeUpdateMarkers');
+        this.updateMarkers();
+    }
+
+    buildMarkerFeatures() {
+        const current_view = this.map.getView();
+        const bounds = current_view.calculateExtent(this.map.getSize());
+
+        let num_markers = 0;
+        const features_to_add = [];
+        for(const subCategoryName in Markers.ores) {
+            const items = Markers.ores[subCategoryName];
+            let item;
+            for (const itemName in items) {
+                item = items[itemName];
+                let mapPos = toMapCoords([item.x, item.y]);
+                if (!containsCoordinate(bounds, mapPos)) {
+                    continue;
+                }
+                const newMarker = new Feature({
+                    geometry: new Point(mapPos),
+                    name: itemName,
+                });
+
+                newMarker.setStyle(styles[subCategoryName] || styles.default);
+                features_to_add.push(newMarker);
+
+                num_markers += 1;
+
+                // Break clause, never load more than MAX_MARKERS markers
+                if (num_markers >= this.state.maxMarkers) {
+                    return features_to_add;
+                }
+            }
+        }
+        return features_to_add;
     }
 
     render(){
