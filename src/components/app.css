@@ -1,0 +1,21 @@
+.app {
+    width: 100vw;
+    height: 100vh;
+    display: grid;
+    grid-template-columns: minmax(min-content, 200px) 1fr;
+    grid-template-rows: 1fr;
+    grid-template-areas: "controls map";
+    grid-gap: 10px;
+}
+
+.controls {
+    grid-area: controls;
+}
+
+.map {
+    grid-area: map;
+}
+
+.nothing{
+    color: #098209;
+}
